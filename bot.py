@@ -1,9 +1,9 @@
 import os
 import asyncio
-import json
 from aiohttp import web
 from aiogram import Bot, Dispatcher, types, F
-from datetime import datetime, timedelta
+import re
+import time
 
 # ====== Настройки ======
 BOT_TOKEN = os.getenv("BOT_TOKEN")
@@ -17,9 +17,8 @@ ADMIN_ID = int(ADMIN_ID) if ADMIN_ID and ADMIN_ID.isdigit() else None
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
-WELCOME_FILE = "welcome.json"  # для приветствия
-WARNS_FILE = "warns.json"      # для варнов
-RULES_FILE = "rules.json"      # для правил
+WELCOME_FILE = "welcome.txt"
+RULES_FILE = "rules.txt"
 
 # ====== Веб сервер для Render ======
 async def handle(request):
@@ -36,296 +35,135 @@ async def start_web():
     print(f"🌐 Web server running on port {port}")
 
 # ====== Приветствие ======
-@dp.message(F.text.startswith("+приветствие текст"))
-async def set_welcome_text(message: types.Message):
+@dp.message(F.text.startswith("+приветствие"))
+async def set_welcome(message: types.Message):
     if ADMIN_ID and message.from_user.id != ADMIN_ID:
         return await message.reply("❌ У вас нет прав для изменения приветствия.")
-    text = message.text[len("+приветствие текст"):].strip()
+    text = message.text[len("+приветствие"):].strip()
     if not text:
-        return await message.reply("❗ Введите текст приветствия.\nПример: +приветствие текст Привет, {имя}!")
-    settings = {}
-    if os.path.exists(WELCOME_FILE):
-        with open(WELCOME_FILE, "r", encoding="utf-8") as f:
-            settings = json.load(f)
-    settings["text"] = text
+        return await message.reply("❗ Введите текст приветствия.\nПример: +приветствие Привет, (имя)! Добро пожаловать 😊")
     with open(WELCOME_FILE, "w", encoding="utf-8") as f:
-        json.dump(settings, f, ensure_ascii=False, indent=4)
-    await message.answer("✅ Текст приветствия обновлён!")
-
-@dp.message(F.text.startswith("+приветствие медиа"))
-async def set_welcome_media(message: types.Message):
-    if ADMIN_ID and message.from_user.id != ADMIN_ID:
-        return await message.reply("❌ У вас нет прав для изменения приветствия.")
-    url = message.text[len("+приветствие медиа"):].strip()
-    if not url:
-        return await message.reply("❗ Укажите URL стикера, GIF или картинки.")
-    settings = {}
-    if os.path.exists(WELCOME_FILE):
-        with open(WELCOME_FILE, "r", encoding="utf-8") as f:
-            settings = json.load(f)
-    settings["media"] = url
-    with open(WELCOME_FILE, "w", encoding="utf-8") as f:
-        json.dump(settings, f, ensure_ascii=False, indent=4)
-    await message.answer("✅ Медиа приветствия обновлено!")
-
-@dp.message(F.text.startswith("+приветствие кнопки"))
-async def set_welcome_buttons(message: types.Message):
-    if ADMIN_ID and message.from_user.id != ADMIN_ID:
-        return await message.reply("❌ У вас нет прав для изменения приветствия.")
-    buttons_text = message.text[len("+приветствие кнопки"):].strip()
-    buttons = []
-    try:
-        for b in buttons_text.split(";"):
-            name, url = b.split("|")
-            buttons.append({"text": name.strip(), "url": url.strip()})
-    except:
-        return await message.reply("❗ Формат кнопок: Название|URL;Кнопка2|URL2")
-    settings = {}
-    if os.path.exists(WELCOME_FILE):
-        with open(WELCOME_FILE, "r", encoding="utf-8") as f:
-            settings = json.load(f)
-    settings["buttons"] = buttons
-    with open(WELCOME_FILE, "w", encoding="utf-8") as f:
-        json.dump(settings, f, ensure_ascii=False, indent=4)
-    await message.answer("✅ Кнопки приветствия обновлены!")
-
-@dp.message(F.text.startswith("-приветствие"))
-async def remove_welcome(message: types.Message):
-    if ADMIN_ID and message.from_user.id != ADMIN_ID:
-        return await message.reply("❌ У вас нет прав для изменения приветствия.")
-    if os.path.exists(WELCOME_FILE):
-        os.remove(WELCOME_FILE)
-    await message.answer("✅ Приветствие отключено!")
-
-@dp.message(F.text.lower() == "приветствие")
-async def view_welcome(message: types.Message):
-    if os.path.exists(WELCOME_FILE):
-        with open(WELCOME_FILE, "r", encoding="utf-8") as f:
-            settings = json.load(f)
-        text = settings.get("text", "Не задано")
-        media = settings.get("media", "Не задано")
-        buttons = settings.get("buttons", [])
-        btn_str = "; ".join([f"{b['text']}|{b['url']}" for b in buttons]) if buttons else "Не задано"
-        await message.answer(f"📝 Приветствие:\nТекст: {text}\nМедиа: {media}\nКнопки: {btn_str}")
-    else:
-        await message.answer("❗ Приветствие ещё не настроено.")
-
-@dp.message(F.text.lower() == "тест приветствия")
-async def test_welcome(message: types.Message):
-    member = message.from_user
-    await send_welcome(message.chat.id, member)
+        f.write(text)
+    await message.answer("✅ Приветствие беседы обновлено! 😎")
 
 @dp.message(F.new_chat_members)
 async def welcome_new_members(message: types.Message):
-    for member in message.new_chat_members:
-        await send_welcome(message.chat.id, member)
-
-async def send_welcome(chat_id, member):
-    settings = {}
     if os.path.exists(WELCOME_FILE):
         with open(WELCOME_FILE, "r", encoding="utf-8") as f:
-            settings = json.load(f)
-    text = settings.get("text", "Привет, {имя}! Добро пожаловать 😊")
-    media = settings.get("media")
-    buttons = settings.get("buttons", [])
-    text = text.replace("{имя}", member.full_name).replace("{username}", member.username or "").replace("{id}", str(member.id))
-    keyboard = None
-    if buttons:
-        keyboard = types.InlineKeyboardMarkup()
-        for b in buttons:
-            keyboard.add(types.InlineKeyboardButton(text=b["text"], url=b["url"]))
-    if media:
-        try:
-            await bot.send_animation(chat_id, media, caption=text, reply_markup=keyboard)
-        except:
-            try:
-                await bot.send_photo(chat_id, media, caption=text, reply_markup=keyboard)
-            except:
-                await bot.send_message(chat_id, text, reply_markup=keyboard)
+            template = f.read()
     else:
-        await bot.send_message(chat_id, text, reply_markup=keyboard)
+        template = "Привет, (имя)! Добро пожаловать 😊"
+    for member in message.new_chat_members:
+        text = template.replace("(имя)", member.full_name)
+        await message.answer(f"🗂️ Приветствие беседы:\n{text} 🎉")
 
-# ====== Модерация: Варн, Мут, Бан ======
-def load_warns():
-    if os.path.exists(WARNS_FILE):
-        with open(WARNS_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
-    return {}
+# ====== Правила ======
+@dp.message(F.text.startswith("+правила"))
+async def set_rules(message: types.Message):
+    if ADMIN_ID and message.from_user.id != ADMIN_ID:
+        return await message.reply("❌ У вас нет прав для изменения правил.")
+    text = message.text[len("+правила"):].strip()
+    if not text:
+        return await message.reply("❗ Введите текст правил.")
+    with open(RULES_FILE, "w", encoding="utf-8") as f:
+        f.write(text)
+    await message.answer("✅ Правила обновлены! 📜")
 
-def save_warns(data):
-    with open(WARNS_FILE, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=4)
+@dp.message(F.text == "правила")
+async def show_rules(message: types.Message):
+    if os.path.exists(RULES_FILE):
+        with open(RULES_FILE, "r", encoding="utf-8") as f:
+            rules = f.read()
+    else:
+        rules = "Правила пока не заданы. 📝"
+    await message.answer(f"📌 Правила чата:\n{rules}")
 
-async def restrict_user(chat_id, user_id, duration_seconds):
-    until_date = datetime.utcnow() + timedelta(seconds=duration_seconds)
-    await bot.restrict_chat_member(chat_id, user_id, types.ChatPermissions(can_send_messages=False), until_date=until_date)
+# ====== Мут, Варн, Бан, Кик ======
+WARN_LIMIT = 3
+user_warns = {}  # {user_id: count}
 
+# ====== Логирование наказаний ======
+async def log_action(action_type, target: types.User, by_user: types.User, reason: str):
+    if ADMIN_ID:
+        await bot.send_message(
+            ADMIN_ID,
+            f"📝 <b>Модерация:</b> {action_type}\n"
+            f"👤 Пользователь: {target.full_name} ({target.id})\n"
+            f"👮 Модератор: {by_user.full_name} ({by_user.id})\n"
+            f"📌 Причина: {reason}\n"
+            f"⏰ Время: {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())}",
+            parse_mode="HTML"
+        )
+
+async def warn_user(message: types.Message, target: types.User, reason: str):
+    uid = target.id
+    count = user_warns.get(uid, 0) + 1
+    user_warns[uid] = count
+    await message.answer(f"⚠ Пользователь {target.full_name} получил варн {count}/{WARN_LIMIT} 😎\nПричина: {reason}")
+    await log_action("Варн", target, message.from_user, reason)
+    if count >= WARN_LIMIT:
+        await ban_user(message, target, "Превышен лимит варнов")
+
+async def mute_user(message: types.Message, target: types.User, duration: str):
+    await message.answer(f"🤐 Пользователь {target.full_name} замучен на {duration} ⏰")
+    await log_action("Мут", target, message.from_user, f"Длительность: {duration}")
+
+async def ban_user(message: types.Message, target: types.User, reason: str):
+    try:
+        await message.chat.kick(target.id)
+        await message.answer(f"🔨 Пользователь {target.full_name} забанен 😎\nПричина: {reason}")
+        await log_action("Бан", target, message.from_user, reason)
+    except Exception as e:
+        await message.answer(f"❌ Не удалось забанить: {e}")
+
+async def kick_user(message: types.Message, target: types.User):
+    try:
+        await message.chat.kick(target.id)
+        await message.answer(f"👢 Пользователь {target.full_name} кикнут!")
+        await log_action("Кик", target, message.from_user, "Кик из чата")
+    except Exception as e:
+        await message.answer(f"❌ Не удалось кикнуть: {e}")
+
+# ====== Команды модерации ======
 @dp.message(F.text.startswith("варн"))
-async def add_warn(message: types.Message):
-    if not message.from_user.id == ADMIN_ID:
-        return await message.reply("❌ У вас нет прав выдавать варны.")
-    args = message.text.split()
-    if message.reply_to_message:
-        user = message.reply_to_message.from_user
-        reason = " ".join(args[1:]) if len(args) > 1 else "Не указана"
-    else:
-        return await message.reply("❗ Использование: варн через реплай на пользователя")
-    data = load_warns()
-    chat_warns = data.get(str(message.chat.id), {})
-    chat_warns[str(user.id)] = chat_warns.get(str(user.id), 0) + 1
-    data[str(message.chat.id)] = chat_warns
-    save_warns(data)
-    count = chat_warns[str(user.id)]
-    await message.answer(f"⚠️ Выдан варн пользователю {user.full_name} (@{user.username or 'не указано'}).\nВсего предупреждений: {count}/3\nПричина: {reason}")
-    if count == 2:
-        await restrict_user(message.chat.id, user.id, 1800)  # 30 минут
-        await message.answer(f"🔇 Автоматический мут на 30 минут.")
-    elif count >= 3:
-        await bot.ban_chat_member(message.chat.id, user.id)
-        await message.answer(f"🚫 Автоматический бан.")
-
-@dp.message(F.text.startswith("варны"))
-async def view_warns(message: types.Message):
-    if message.reply_to_message:
-        user = message.reply_to_message.from_user
-        data = load_warns()
-        chat_warns = data.get(str(message.chat.id), {})
-        count = chat_warns.get(str(user.id), 0)
-        await message.answer(f"⚠️ Варны пользователя {user.full_name}: {count}/3")
-    else:
-        await message.reply("❗ Использование: варны через реплай на пользователя")
-
-@dp.message(F.text.startswith("снятьварн"))
-async def remove_warn(message: types.Message):
-    if not message.from_user.id == ADMIN_ID:
-        return await message.reply("❌ У вас нет прав снимать варны.")
-    if message.reply_to_message:
-        user = message.reply_to_message.from_user
-        data = load_warns()
-        chat_warns = data.get(str(message.chat.id), {})
-        chat_warns[str(user.id)] = max(0, chat_warns.get(str(user.id), 0)-1)
-        data[str(message.chat.id)] = chat_warns
-        save_warns(data)
-        await message.answer(f"✅ Варн снят пользователю {user.full_name}")
-    else:
-        await message.reply("❗ Использование: снятьварн через реплай на пользователя")
-
-@dp.message(F.text.startswith("очиститьварны"))
-async def clear_warns(message: types.Message):
-    if not message.from_user.id == ADMIN_ID:
-        return await message.reply("❌ У вас нет прав очищать варны.")
-    if message.reply_to_message:
-        user = message.reply_to_message.from_user
-        data = load_warns()
-        chat_warns = data.get(str(message.chat.id), {})
-        chat_warns[str(user.id)] = 0
-        data[str(message.chat.id)] = chat_warns
-        save_warns(data)
-        await message.answer(f"✅ Варны очищены пользователю {user.full_name}")
-    else:
-        await message.reply("❗ Использование: очиститьварны через реплай на пользователя")
+async def cmd_warn(message: types.Message):
+    parts = message.text.split()
+    if len(parts) < 3:
+        return await message.reply("❗ Использование: варн @user причина")
+    target = message.entities[1].user if len(message.entities) > 1 else None
+    reason = " ".join(parts[2:])
+    if target:
+        await warn_user(message, target, reason)
 
 @dp.message(F.text.startswith("мут"))
-async def mute_user(message: types.Message):
-    if not message.from_user.id == ADMIN_ID:
-        return await message.reply("❌ У вас нет прав мутить.")
-    args = message.text.split()
-    if message.reply_to_message:
-        user = message.reply_to_message.from_user
-        time_arg = args[1] if len(args) > 1 else "30м"
-        reason = " ".join(args[2:]) if len(args) > 2 else "Не указана"
-    else:
-        await message.reply("❗ Использование: мут через реплай [время] [причина]")
-        return
-    t = time_arg
-    seconds = 0
-    if t.endswith("м"):
-        seconds = int(t[:-1])*60
-    elif t.endswith("ч"):
-        seconds = int(t[:-1])*3600
-    elif t.endswith("д"):
-        seconds = int(t[:-1])*86400
-    else:
-        seconds = int(t)
-    await restrict_user(message.chat.id, user.id, seconds)
-    await message.answer(f"🔇 Пользователь {user.full_name} (@{user.username or 'не указано'}) получил мут на {time_arg}.\nПричина: {reason}\nВыдал: @{message.from_user.username}")
+async def cmd_mute(message: types.Message):
+    parts = message.text.split()
+    if len(parts) < 3:
+        return await message.reply("❗ Использование: мут 1ч @user причина")
+    duration = parts[1]
+    target = message.entities[2].user if len(message.entities) > 2 else None
+    reason = " ".join(parts[3:])
+    if target:
+        await mute_user(message, target, duration)
 
 @dp.message(F.text.startswith("бан"))
-async def ban_user(message: types.Message):
-    if not message.from_user.id == ADMIN_ID:
-        return await message.reply("❌ У вас нет прав банить.")
-    if message.reply_to_message:
-        user = message.reply_to_message.from_user
-        reason = " ".join(message.text.split()[1:]) if len(message.text.split())>1 else "Не указана"
-    else:
-        await message.reply("❗ Использование: бан через реплай [причина]")
-        return
-    await bot.ban_chat_member(message.chat.id, user.id)
-    await message.answer(f"🚫 Пользователь {user.full_name} (@{user.username or 'не указано'}) был заблокирован.\nПричина: {reason}")
+async def cmd_ban(message: types.Message):
+    parts = message.text.split()
+    if len(parts) < 3:
+        return await message.reply("❗ Использование: бан @user причина")
+    target = message.entities[1].user if len(message.entities) > 1 else None
+    reason = " ".join(parts[2:])
+    if target:
+        await ban_user(message, target, reason)
 
-@dp.message(F.text.startswith("разбан"))
-async def unban_user(message: types.Message):
-    if not message.from_user.id == ADMIN_ID:
-        return await message.reply("❌ У вас нет прав разбанивать.")
-    if message.reply_to_message:
-        user = message.reply_to_message.from_user
-        await bot.unban_chat_member(message.chat.id, user.id)
-        await message.answer(f"✅ Пользователь {user.full_name} (@{user.username or 'не указано'}) был разбанен")
-    else:
-        await message.reply("❗ Использование: разбан через реплай на пользователя")
-
-# ====== Правила чата ======
-@dp.message(F.text.startswith("+правила "))
-async def set_rules_text(message: types.Message):
-    if ADMIN_ID and message.from_user.id != ADMIN_ID:
-        return await message.reply("❌ У вас нет прав изменять правила.")
-    text = message.text[len("+правила "):].strip()
-    if not text:
-        return await message.reply("❗ Введите текст правил чата.")
-    settings = {}
-    if os.path.exists(RULES_FILE):
-        with open(RULES_FILE, "r", encoding="utf-8") as f:
-            settings = json.load(f)
-    settings["text"] = text
-    with open(RULES_FILE, "w", encoding="utf-8") as f:
-        json.dump(settings, f, ensure_ascii=False, indent=4)
-    await message.answer("✅ Текст правил обновлён!")
-
-@dp.message(F.text.startswith("+правила кнопки"))
-async def set_rules_buttons(message: types.Message):
-    if ADMIN_ID and message.from_user.id != ADMIN_ID:
-        return await message.reply("❌ У вас нет прав изменять правила.")
-    buttons_text = message.text[len("+правила кнопки"):].strip()
-    buttons = []
-    try:
-        for b in buttons_text.split(";"):
-            name, url = b.split("|")
-            buttons.append({"text": name.strip(), "url": url.strip()})
-    except:
-        return await message.reply("❗ Формат кнопок: Название|URL;Кнопка2|URL2")
-    settings = {}
-    if os.path.exists(RULES_FILE):
-        with open(RULES_FILE, "r", encoding="utf-8") as f:
-            settings = json.load(f)
-    settings["buttons"] = buttons
-    with open(RULES_FILE, "w", encoding="utf-8") as f:
-        json.dump(settings, f, ensure_ascii=False, indent=4)
-    await message.answer("✅ Кнопки правил обновлены!")
-
-@dp.message(F.text.lower() == "правила")
-async def view_rules(message: types.Message):
-    settings = {}
-    if os.path.exists(RULES_FILE):
-        with open(RULES_FILE, "r", encoding="utf-8") as f:
-            settings = json.load(f)
-    text = settings.get("text", "Правила ещё не заданы.")
-    buttons = settings.get("buttons", [])
-    keyboard = None
-    if buttons:
-        keyboard = types.InlineKeyboardMarkup()
-        for b in buttons:
-            keyboard.add(types.InlineKeyboardButton(text=b["text"], url=b["url"]))
-    await message.answer(text, reply_markup=keyboard)
+@dp.message(F.text.startswith("кик"))
+async def cmd_kick(message: types.Message):
+    parts = message.text.split()
+    if len(parts) < 2:
+        return await message.reply("❗ Использование: кик @user")
+    target = message.entities[1].user if len(message.entities) > 1 else None
+    if target:
+        await kick_user(message, target)
 
 # ====== Фильтр слов ======
 BAD_WORDS = ["харизма", "xarizma"]
@@ -340,11 +178,79 @@ async def filter_bad_words(message: types.Message):
                 if ADMIN_ID:
                     await bot.send_message(
                         ADMIN_ID,
-                        f"Удалено сообщение пользователя {message.from_user.full_name} "
-                        f"({message.from_user.id}):\n{message.text}"
+                        f"Удалено сообщение пользователя {message.from_user.full_name} ({message.from_user.id}):\n{message.text}"
                     )
             except Exception as e:
                 print(f"Ошибка удаления: {e}")
+
+# ====== Очистка сообщений ======
+@dp.message(F.text.startswith("очистить"))
+async def clear_messages(message: types.Message):
+    parts = message.text.split()
+    limit = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else 10
+    counter = 0
+    async for msg in bot.iter_history(message.chat.id, limit=limit):
+        try:
+            await bot.delete_message(message.chat.id, msg.message_id)
+            counter += 1
+        except:
+            continue
+    await message.answer(f"🧹 Удалено сообщений: {counter} 🧹")
+
+# ====== Команда "кто" ======
+@dp.message(F.text.startswith("кто"))
+async def who_user(message: types.Message):
+    if not message.reply_to_message and not message.entities:
+        return await message.reply("❗ Использование: кто @user или в реплее")
+    if message.entities:
+        target = message.entities[1].user
+    else:
+        target = message.reply_to_message.from_user
+    await message.answer(f"👤 Пользователь: {target.full_name}\nID: {target.id} 📝")
+
+# ====== Анти-капс ======
+@dp.message()
+async def anti_caps(message: types.Message):
+    if message.text and len(message.text) > 5 and message.text.isupper():
+        try:
+            await message.delete()
+            await message.answer(f"🔇 Пожалуйста, не кричите, {message.from_user.full_name}! 😅")
+        except:
+            pass
+
+# ====== Анти-спам ======
+spam_tracker = {}  # {user_id: [timestamps]}
+
+@dp.message()
+async def anti_spam(message: types.Message):
+    uid = message.from_user.id
+    now = time.time()
+    timestamps = spam_tracker.get(uid, [])
+    timestamps = [t for t in timestamps if now - t < 5]  # 5 сек окно
+    timestamps.append(now)
+    spam_tracker[uid] = timestamps
+    if len(timestamps) > 5:
+        try:
+            await message.delete()
+            await message.answer(f"🚫 Спам запрещён, {message.from_user.full_name}! 😎")
+        except:
+            pass
+
+# ====== Анти-реклама ======
+@dp.message()
+async def anti_ads(message: types.Message):
+    if message.text and re.search(r"(t\.me\/|telegram\.me|http[s]?:\/\/)", message.text):
+        try:
+            await message.delete()
+            await message.answer(f"📛 Реклама запрещена, {message.from_user.full_name}! ⚠️")
+        except:
+            pass
+
+# ====== Прощание ======
+@dp.message(F.left_chat_member)
+async def farewell(message: types.Message):
+    member = message.left_chat_member
+    await message.answer(f"😢 Пользователь {member.full_name} покинул чат. До новых встреч! 👋")
 
 # ====== Запуск ======
 async def main():
