@@ -35,27 +35,47 @@ async def start_web():
     print(f"🌐 Web server running on port {port}")
 
 # ====== Приветствие ======
+# +приветствие ТЕКСТ — установить новое
 @dp.message(F.text.startswith("+приветствие"))
 async def set_welcome(message: types.Message):
     if ADMIN_ID and message.from_user.id != ADMIN_ID:
-        return await message.reply("❌ У вас нет прав для изменения приветствия.")
+        return await message.reply("❌ У вас нет прав")
     text = message.text[len("+приветствие"):].strip()
-    if not text:
-        return await message.reply("❗ Введите текст приветствия.\nПример: +приветствие Привет, (имя)! Добро пожаловать 😊")
-    with open(WELCOME_FILE, "w", encoding="utf-8") as f:
-        f.write(text)
-    await message.answer("✅ Приветствие беседы обновлено! 😎")
+    if text:
+        with open(WELCOME_FILE, "w", encoding="utf-8") as f:
+            f.write(text)
+        await message.answer("✅ Приветствие обновлено!")
 
+# приветствие — показать текущее
+@dp.message(F.text == "приветствие")
+async def show_welcome(message: types.Message):
+    if os.path.exists(WELCOME_FILE):
+        with open(WELCOME_FILE, "r", encoding="utf-8") as f:
+            text = f.read()
+    else:
+        text = "Привет, (имя)!"
+    await message.answer(text)
+
+# -приветствие — удалить
+@dp.message(F.text == "-приветствие")
+async def delete_welcome(message: types.Message):
+    if ADMIN_ID and message.from_user.id != ADMIN_ID:
+        return await message.reply("❌ У вас нет прав")
+    if os.path.exists(WELCOME_FILE):
+        os.remove(WELCOME_FILE)
+    await message.answer("Приветствие удалено!")
+
+# Авто-приветствие новых участников
 @dp.message(F.new_chat_members)
 async def welcome_new_members(message: types.Message):
     if os.path.exists(WELCOME_FILE):
         with open(WELCOME_FILE, "r", encoding="utf-8") as f:
             template = f.read()
     else:
-        template = "Привет, (имя)! Добро пожаловать 😊"
+        template = "Привет, (имя)!"
     for member in message.new_chat_members:
         text = template.replace("(имя)", member.full_name)
-        await message.answer(f"🗂️ Приветствие беседы:\n{text} 🎉")
+        await message.answer(text)
 
 # ====== Правила ======
 @dp.message(F.text.startswith("+правила"))
