@@ -29,23 +29,28 @@ async def start_web():
     await site.start()
     print(f"🌐 Web server running on port {port}")
 
+# ====== Список слов для фильтра ======
+BAD_WORDS = ["харизма", "xarizma"]  # можно добавить новые формы при необходимости
+
 # ====== Фильтр сообщений ======
 @dp.message()
 async def filter_bad_words(message: types.Message):
-    if message.text and "харизма" in message.text.lower():  # регистр не важен
-        try:
-            await message.delete()
-            print(f"Сообщение удалено: {message.text}")
-            
-            # уведомление админу в ЛС
-            if ADMIN_ID:
-                await bot.send_message(
-                    ADMIN_ID,
-                    f"Удалено сообщение пользователя {message.from_user.full_name} "
-                    f"({message.from_user.id}):\n{message.text}"
-                )
-        except Exception as e:
-            print(f"Не удалось удалить сообщение: {e}")
+    if message.text:
+        text_lower = message.text.lower()  # приводим к нижнему регистру
+        if any(word in text_lower for word in BAD_WORDS):
+            try:
+                await message.delete()
+                print(f"Удалено сообщение: {message.text}")
+                
+                # уведомление админу в ЛС
+                if ADMIN_ID:
+                    await bot.send_message(
+                        ADMIN_ID,
+                        f"Удалено сообщение пользователя {message.from_user.full_name} "
+                        f"({message.from_user.id}):\n{message.text}"
+                    )
+            except Exception as e:
+                print(f"Не удалось удалить сообщение: {e}")
 
 # ====== Запуск ======
 async def main():
