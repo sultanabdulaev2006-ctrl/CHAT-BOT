@@ -1,7 +1,38 @@
+import os
+import asyncio
 import json
-WELCOME_FILE = "welcome.json"  # теперь хранение настроек в JSON
+from aiohttp import web
+from aiogram import Bot, Dispatcher, types, F
 
-# ====== Установка приветствия ======
+# ====== Настройки ======
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+ADMIN_ID = os.getenv("ADMIN_ID")
+
+if not BOT_TOKEN:
+    raise ValueError("❌ Переменная BOT_TOKEN не задана!")
+
+ADMIN_ID = int(ADMIN_ID) if ADMIN_ID and ADMIN_ID.isdigit() else None
+
+bot = Bot(token=BOT_TOKEN)
+dp = Dispatcher()
+
+WELCOME_FILE = "welcome.json"  # файл для хранения настроек приветствия
+
+# ====== Веб сервер для Render ======
+async def handle(request):
+    return web.Response(text="Bot is running 🚀")
+
+async def start_web():
+    app = web.Application()
+    app.router.add_get("/", handle)
+    port = int(os.getenv("PORT", 8000))
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, "0.0.0.0", port)
+    await site.start()
+    print(f"🌐 Web server running on port {port}")
+
+# ====== Команды приветствия ======
 @dp.message(F.text.startswith("+приветствие текст"))
 async def set_welcome_text(message: types.Message):
     if ADMIN_ID and message.from_user.id != ADMIN_ID:
@@ -93,7 +124,7 @@ async def test_welcome(message: types.Message):
     member = message.from_user
     await send_welcome(message.chat.id, member)
 
-# ====== Отправка приветствия новому пользователю ======
+# ====== Авто-приветствие новых участников ======
 @dp.message(F.new_chat_members)
 async def welcome_new_members(message: types.Message):
     for member in message.new_chat_members:
@@ -129,3 +160,31 @@ async def send_welcome(chat_id, member):
                 await bot.send_message(chat_id, text, reply_markup=keyboard)
     else:
         await bot.send_message(chat_id, text, reply_markup=keyboard)
+
+# ====== Фильтр слов ======
+BAD_WORDS = ["харизма", "xarizma"]
+
+@dp.message()
+async def filter_bad_words(message: types.Message):
+    if message.text:
+        text_lower = message.text.lower()
+        if any(word in text_lower for word in BAD_WORDS):
+            try:
+                await message.delete()
+                if ADMIN_ID:
+                    await bot.send_message(
+                        ADMIN_ID,
+                        f"Удалено сообщение пользователя {message.from_user.full_name} "
+                        f"({message.from_user.id}):\n{message.text}"
+                    )
+            except Exception as e:
+                print(f"Ошибка удаления: {e}")
+
+# ====== Запуск ======
+async def main():
+    asyncio.create_task(start_web())
+    print("🤖 Бот запущен и работает 24/7")
+    await dp.start_polling(bot)
+
+if __name__ == "__main__":
+    asyncio.run(main())
