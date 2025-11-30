@@ -34,14 +34,12 @@ async def start_web():
 USERS = {}  # user_id: {nick, rank, emoji, premium}
 NOTES = {}  # user_id: [{id, content}]
 TODOS = {}  # user_id: [{id, task, done}]
-WARN_LIMIT = 3
 USER_WARNS = {}  # user_id: count
 SPAM_TRACKER = {}  # user_id: [timestamps]
 BAD_WORDS = ["харизма", "xarizma"]
-
-# ====== Переменные приветствия и прощания ======
-WELCOME_TEXT = "Привет, (имя)!"
-FAREWELL_TEXT = "Пока, (имя)!"
+WELCOME_TEXT = "Привет, (имя)!"   # дефолт
+FAREWELL_TEXT = "Пока, (имя)!"   # дефолт
+WARN_LIMIT = 3
 
 # ====== Клавиатуры ======
 def main_menu():
@@ -49,31 +47,8 @@ def main_menu():
         [InlineKeyboardButton("📁 Профиль", callback_data="menu_profile")],
         [InlineKeyboardButton("🗂 Органайзер", callback_data="menu_organizer")],
         [InlineKeyboardButton("🛠 Чат-управление", callback_data="menu_chat")],
-        [InlineKeyboardButton("💎 Премиум", callback_data="menu_premium")]
-    ])
-
-def profile_menu():
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton("✏ Изменить ник", callback_data="profile_nick")],
-        [InlineKeyboardButton("⭐ Изменить ранк", callback_data="profile_rank")],
-        [InlineKeyboardButton("😊 Изменить эмодзи", callback_data="profile_emoji")],
-        [InlineKeyboardButton("⬅ Назад", callback_data="back_main")]
-    ])
-
-def organizer_menu():
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton("➕ Добавить заметку", callback_data="organizer_add_note")],
-        [InlineKeyboardButton("📄 Список заметок", callback_data="organizer_list_notes")],
-        [InlineKeyboardButton("➕ Добавить todo", callback_data="organizer_add_todo")],
-        [InlineKeyboardButton("📋 Список todo", callback_data="organizer_list_todo")],
-        [InlineKeyboardButton("⬅ Назад", callback_data="back_main")]
-    ])
-
-def premium_menu():
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton("💎 Выдать премиум", callback_data="premium_grant")],
-        [InlineKeyboardButton("❌ Снять премиум", callback_data="premium_revoke")],
-        [InlineKeyboardButton("⬅ Назад", callback_data="back_main")]
+        [InlineKeyboardButton("💎 Премиум", callback_data="menu_premium")],
+        [InlineKeyboardButton("👋 Приветствие/Прощание", callback_data="menu_greetings")]
     ])
 
 # ====== /start ======
@@ -87,106 +62,117 @@ async def cmd_start(message: types.Message):
     await message.answer(f"Привет, {message.from_user.full_name}! 👋\nЯ Сири Премиум 🤖", reply_markup=main_menu())
 
 # ====== Приветствие / Прощание ======
+@dp.callback_query(F.data == "menu_greetings")
+async def menu_greetings(call: types.CallbackQuery):
+    if call.from_user.id != ADMIN_ID:
+        await call.answer("❌ Только админ может менять приветствия/прощания")
+        return
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton("✏ Изменить приветствие", callback_data="set_welcome")],
+        [InlineKeyboardButton("📄 Показать приветствие", callback_data="show_welcome")],
+        [InlineKeyboardButton("❌ Удалить приветствие", callback_data="delete_welcome")],
+        [InlineKeyboardButton("✏ Изменить прощание", callback_data="set_farewell")],
+        [InlineKeyboardButton("📄 Показать прощание", callback_data="show_farewell")],
+        [InlineKeyboardButton("❌ Удалить прощание", callback_data="delete_farewell")],
+        [InlineKeyboardButton("⬅ Назад", callback_data="back_main")]
+    ])
+    await call.message.edit_text("👋 Приветствие и прощание", reply_markup=kb)
+    await call.answer()
+
+@dp.callback_query(F.data.startswith(("set_", "show_", "delete_")))
+async def greetings_actions(call: types.CallbackQuery):
+    global WELCOME_TEXT, FAREWELL_TEXT
+    action = call.data
+    if call.from_user.id != ADMIN_ID:
+        await call.answer("❌ Только админ")
+        return
+
+    if action == "set_welcome":
+        await call.message.answer("Введите новый текст приветствия (используйте (имя) для имени пользователя):")
+        @dp.message(F.from_user.id == ADMIN_ID)
+        async def set_welcome_text(message: types.Message):
+            nonlocal WELCOME_TEXT
+            WELCOME_TEXT = message.text
+            await message.answer(f"✅ Приветствие обновлено:\n{WELCOME_TEXT}")
+            dp.message_handlers.unregister(set_welcome_text)
+
+    elif action == "show_welcome":
+        await call.message.answer(f"📄 Текущее приветствие:\n{WELCOME_TEXT}")
+
+    elif action == "delete_welcome":
+        WELCOME_TEXT = ""
+        await call.message.answer("❌ Приветствие удалено")
+
+    elif action == "set_farewell":
+        await call.message.answer("Введите новый текст прощания (используйте (имя) для имени пользователя):")
+        @dp.message(F.from_user.id == ADMIN_ID)
+        async def set_farewell_text(message: types.Message):
+            nonlocal FAREWELL_TEXT
+            FAREWELL_TEXT = message.text
+            await message.answer(f"✅ Прощание обновлено:\n{FAREWELL_TEXT}")
+            dp.message_handlers.unregister(set_farewell_text)
+
+    elif action == "show_farewell":
+        await call.message.answer(f"📄 Текущее прощание:\n{FAREWELL_TEXT}")
+
+    elif action == "delete_farewell":
+        FAREWELL_TEXT = ""
+        await call.message.answer("❌ Прощание удалено")
+
+    await call.answer()
+
+# ====== Авто-приветствие и прощание ======
 @dp.message(F.new_chat_members)
 async def welcome_new_members(message: types.Message):
     for member in message.new_chat_members:
-        text = WELCOME_TEXT.replace("(имя)", member.full_name)
+        text = WELCOME_TEXT.replace("(имя)", member.full_name) if WELCOME_TEXT else f"Привет, {member.full_name}!"
         await message.answer(text)
 
 @dp.message(F.left_chat_member)
 async def farewell_member(message: types.Message):
     member = message.left_chat_member
-    text = FAREWELL_TEXT.replace("(имя)", member.full_name)
+    text = FAREWELL_TEXT.replace("(имя)", member.full_name) if FAREWELL_TEXT else f"Пока, {member.full_name}!"
     await message.answer(text)
 
 # ====== Профиль ======
-@dp.callback_query(F.data.startswith("menu_profile"))
+@dp.callback_query(F.data == "menu_profile")
 async def menu_profile(call: types.CallbackQuery):
-    user = USERS.get(call.from_user.id)
-    text = (
-        f"👤 Ник: {user['nick']}\n"
-        f"⭐ Ранг: {user['rank']}\n"
-        f"😊 Эмодзи: {user['emoji']}\n"
-        f"💎 Статус: {'Premium' if user['premium'] else 'Обычный'}"
-    )
-    await call.message.edit_text(text, reply_markup=profile_menu())
+    user_id = call.from_user.id
+    u = USERS.get(user_id)
+    if not u:
+        await call.answer("❌ Пользователь не найден")
+        return
+    text = f"👤 Профиль:\nНик: {u['nick']}\nРанг: {u['rank']}\nЭмодзи: {u['emoji']}\nПремиум: {'✅' if u['premium'] else '❌'}"
+    await call.message.edit_text(text, reply_markup=main_menu())
     await call.answer()
-
-# ====== Изменение профиля ======
-@dp.callback_query(F.data.startswith("profile_"))
-async def edit_profile(call: types.CallbackQuery):
-    field = call.data.split("_")[1]
-    await call.message.answer(f"Введите новое значение для {field}:")
-    
-    @dp.message(F.from_user.id == call.from_user.id)
-    async def receive_input(message: types.Message):
-        if field == "nick":
-            USERS[message.from_user.id]["nick"] = message.text
-        elif field == "rank":
-            USERS[message.from_user.id]["rank"] = message.text
-        elif field == "emoji":
-            USERS[message.from_user.id]["emoji"] = message.text
-        await message.answer(f"✅ {field} обновлено!", reply_markup=profile_menu())
-        dp.message_handlers.unregister(receive_input)
 
 # ====== Органайзер ======
-@dp.callback_query(F.data.startswith("menu_organizer"))
+@dp.callback_query(F.data == "menu_organizer")
 async def menu_organizer(call: types.CallbackQuery):
-    await call.message.edit_text("🗂 Органайзер", reply_markup=organizer_menu())
-    await call.answer()
-
-@dp.callback_query(F.data.startswith("organizer_"))
-async def organizer_actions(call: types.CallbackQuery):
     user_id = call.from_user.id
-    action = call.data.split("_")[1]
-    if action == "add":
-        await call.message.answer("Введите текст заметки:")
-        @dp.message(F.from_user.id == call.from_user.id)
-        async def add_note_input(message: types.Message):
-            NOTES[user_id].append({"id": len(NOTES[user_id])+1, "content": message.text})
-            await message.answer("✅ Заметка добавлена!", reply_markup=organizer_menu())
-            dp.message_handlers.unregister(add_note_input)
-    elif action == "list":
-        notes = NOTES.get(user_id, [])
-        if not notes:
-            await call.message.answer("📄 Нет заметок")
-        else:
-            text = "\n".join([f"{n['id']}. {n['content']}" for n in notes])
-            await call.message.answer(f"📄 Заметки:\n{text}", reply_markup=organizer_menu())
-
-# ====== Премиум ======
-@dp.callback_query(F.data.startswith("menu_premium"))
-async def menu_premium(call: types.CallbackQuery):
-    await call.message.edit_text("💎 Панель премиум", reply_markup=premium_menu())
+    notes = NOTES.get(user_id, [])
+    todos = TODOS.get(user_id, [])
+    text = f"🗂 Ваш органайзер:\n\n📌 Заметки:\n"
+    text += "\n".join(f"{i+1}. {n['content']}" for i, n in enumerate(notes)) or "Нет заметок"
+    text += "\n\n✅ Задачи:\n"
+    text += "\n".join(f"{i+1}. [{'✔' if t['done'] else '❌'}] {t['task']}" for i, t in enumerate(todos)) or "Нет задач"
+    await call.message.edit_text(text, reply_markup=main_menu())
     await call.answer()
 
-@dp.callback_query(F.data.startswith("premium_"))
-async def premium_actions(call: types.CallbackQuery):
-    if call.from_user.id != ADMIN_ID:
-        await call.answer("❌ Только админ может управлять премиумом")
-        return
-    user_id = int(call.message.text.split("ID: ")[-1]) if "ID:" in call.message.text else call.from_user.id
-    if call.data == "premium_grant":
-        USERS[user_id]["premium"] = True
-        await call.message.answer("✅ Премиум выдан!")
-    elif call.data == "premium_revoke":
-        USERS[user_id]["premium"] = False
-        await call.message.answer("❌ Премиум снят!")
-
-# ====== Чат-управление / Модерация ======
-async def log_action(action, target, by_user, reason=""):
+# ====== Чат-управление (варн, мут, бан, кик) ======
+async def log_action(action, target: types.User, by_user: types.User, reason=""):
     if ADMIN_ID:
         await bot.send_message(
             ADMIN_ID,
-            f"📝 <b>{action}</b>\n"
+            f"📝 <b>Модерация:</b> {action}\n"
             f"👤 Пользователь: {target.full_name} ({target.id})\n"
             f"👮 Модератор: {by_user.full_name} ({by_user.id})\n"
             f"📌 Причина: {reason}\n"
             f"⏰ {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())}",
-            parse_mode="HTML"
+            parse_mode=ParseMode.HTML
         )
 
-async def warn_user(message, target, reason):
+async def warn_user(message: types.Message, target: types.User, reason: str):
     uid = target.id
     count = USER_WARNS.get(uid, 0) + 1
     USER_WARNS[uid] = count
@@ -195,49 +181,70 @@ async def warn_user(message, target, reason):
     if count >= WARN_LIMIT:
         await ban_user(message, target, "Превышен лимит варнов")
 
-async def ban_user(message, target, reason):
+async def ban_user(message: types.Message, target: types.User, reason: str):
     try:
         await message.chat.kick(target.id)
         await message.answer(f"🔨 Пользователь {target.full_name} забанен\nПричина: {reason}")
         await log_action("Бан", target, message.from_user, reason)
-    except:
-        await message.answer("❌ Не удалось забанить")
+    except Exception as e:
+        await message.answer(f"❌ Не удалось забанить: {e}")
+
+async def kick_user(message: types.Message, target: types.User):
+    try:
+        await message.chat.kick(target.id)
+        await message.answer(f"👢 Пользователь {target.full_name} кикнут!")
+        await log_action("Кик", target, message.from_user)
+    except Exception as e:
+        await message.answer(f"❌ Не удалось кикнуть: {e}")
 
 @dp.message(F.text.startswith("варн"))
 async def cmd_warn(message: types.Message):
-    if not message.entities or len(message.entities) < 2: return
+    parts = message.text.split()
+    if len(parts) < 3 or not message.entities:
+        return await message.reply("❗ Использование: варн @user причина")
     target = message.entities[1].user
-    reason = " ".join(message.text.split()[2:]) or "Причина не указана"
+    reason = " ".join(parts[2:])
     await warn_user(message, target, reason)
 
 @dp.message(F.text.startswith("бан"))
 async def cmd_ban(message: types.Message):
-    if not message.entities or len(message.entities) < 2: return
+    parts = message.text.split()
+    if len(parts) < 3 or not message.entities:
+        return await message.reply("❗ Использование: бан @user причина")
     target = message.entities[1].user
-    reason = " ".join(message.text.split()[2:]) or "Причина не указана"
+    reason = " ".join(parts[2:])
     await ban_user(message, target, reason)
 
-# ====== Анти-спам и фильтры ======
+@dp.message(F.text.startswith("кик"))
+async def cmd_kick(message: types.Message):
+    parts = message.text.split()
+    if len(parts) < 2 or not message.entities:
+        return await message.reply("❗ Использование: кик @user")
+    target = message.entities[1].user
+    await kick_user(message, target)
+
+# ====== Анти-капс, анти-спам, фильтр слов ======
 @dp.message()
-async def anti_spam_filter(message: types.Message):
+async def chat_filters(message: types.Message):
+    text = message.text
     uid = message.from_user.id
     now = time.time()
-    timestamps = SPAM_TRACKER.get(uid, [])
-    timestamps = [t for t in timestamps if now - t < 5]
-    timestamps.append(now)
-    SPAM_TRACKER[uid] = timestamps
-    if len(timestamps) > 5:
-        try:
-            await message.delete()
-            await message.answer(f"🚫 Спам запрещён, {message.from_user.full_name}!")
-        except:
-            pass
-    text_lower = message.text.lower() if message.text else ""
-    if any(word in text_lower for word in BAD_WORDS):
-        try:
-            await message.delete()
-        except:
-            pass
+    # Анти-капс
+    if text and len(text) > 5 and text.isupper():
+        try: await message.delete(); await message.answer(f"🔇 Не кричите, {message.from_user.full_name}!")
+        except: pass
+    # Анти-спам
+    stamps = SPAM_TRACKER.get(uid, [])
+    stamps = [t for t in stamps if now - t < 5]
+    stamps.append(now)
+    SPAM_TRACKER[uid] = stamps
+    if len(stamps) > 5:
+        try: await message.delete(); await message.answer(f"🚫 Спам запрещён, {message.from_user.full_name}!")
+        except: pass
+    # Фильтр плохих слов
+    if any(w in text.lower() for w in BAD_WORDS):
+        try: await message.delete()
+        except: pass
 
 # ====== Запуск ======
 async def main():
